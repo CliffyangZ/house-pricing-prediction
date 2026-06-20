@@ -1,0 +1,16 @@
+rank,feature,abs_coef
+1,Overall Qual,23171.297
+2,Gr Liv Area,16844.8481
+3,Kitchen Qual,12274.5622
+4,Garage Cars,11168.8007
+5,1st Flr SF,11090.5609
+6,Year Built,9577.4011
+7,Bsmt Full Bath,7584.3817
+8,Fireplaces,6130.8325
+9,Overall Cond,5443.4605
+10,Garage Area,4442.3481
+11,TotRms AbvGrd,3814.1896
+12,Neighborhood_frequency,2834.4364
+13,Total Bsmt SF,1516.7091
+14,Full Bath,1354.0546
+15,Sale Condition_frequency,648.9229

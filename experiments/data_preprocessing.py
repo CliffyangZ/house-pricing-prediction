@@ -15,20 +15,62 @@ RESULTS_DIR = os.path.join(PROJECT_ROOT, "results", "neural_network")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
+def feature_engineering(df):
+    df["TotalSF"] = (
+        df["1st Flr SF"] +
+        df["2nd Flr SF"] +
+        df["Total Bsmt SF"]
+    )
+
+    df["HouseAge"] = df["Yr Sold"] - df["Year Built"]
+    df["RemodAge"] = df["Yr Sold"] - df["Year Remod/Add"]
+
+    df["IsRemodeled"] = (df["Year Built"] != df["Year Remod/Add"]).astype(int)
+
+    df["TotalBath"] = (
+        df["Full Bath"] +
+        0.5 * df["Half Bath"] +
+        df["Bsmt Full Bath"] +
+        0.5 * df["Bsmt Half Bath"]
+    )
+
+    df["TotalRooms"] = df["TotRms AbvGrd"] + df["Bedroom AbvGr"]
+
+    df["AreaPerRoom"] = df["Gr Liv Area"] / (df["TotRms AbvGrd"] + 1)
+
+    df["HasBasement"] = (df["Total Bsmt SF"] > 0).astype(int)
+    df["HasGarage"] = (df["Garage Area"] > 0).astype(int)
+
+    df["IsNew"] = (df["Year Built"] == df["Yr Sold"]).astype(int)
+
+    df["Garage Area"] = df["Garage Area"].fillna(0)
+
+    return df
+
+
+ENGINEERED_FEATURES = [
+    "TotalSF", "HouseAge", "RemodAge", "IsRemodeled",
+    "TotalBath", "TotalRooms", "AreaPerRoom",
+    "HasBasement", "HasGarage", "IsNew",
+]
+
+
 def load_and_preprocess():
     raw_df = pd.read_csv(DATA_PATH)
+
+    raw_df = feature_engineering(raw_df)
 
     selected_features = [
         "Gr Liv Area", "Overall Qual", "Year Built", "Total Bsmt SF",
         "Garage Cars", "Full Bath", "TotRms AbvGrd", "Neighborhood",
         "Kitchen Qual", "Sale Condition", "Garage Area", "Overall Cond",
         "Fireplaces", "Bsmt Full Bath", "1st Flr SF",
-    ]
+    ] + ENGINEERED_FEATURES
 
     df = raw_df[selected_features + ["SalePrice"]].copy()
 
     num_cols = df[selected_features].select_dtypes(include=["number"]).columns
-    cat_cols = df[selected_features].select_dtypes(include=["object", "str"]).columns
+    cat_cols = df[selected_features].select_dtypes(include=["object"]).columns
     for c in num_cols:
         df[c] = df[c].fillna(df[c].median())
     for c in cat_cols:
@@ -46,15 +88,12 @@ def load_and_preprocess():
         df[f"{col}_frequency"] = df[col].map(freq).fillna(0)
         df = df.drop(columns=col)
 
-    numeric_df = df.select_dtypes(include=["number"])
-    corr = numeric_df.corr()["SalePrice"].drop("SalePrice").abs().sort_values(ascending=False)
-    top_features = corr.head(15).index.tolist()
-
     for c in ["Gr Liv Area", "Total Bsmt SF", "Garage Area", "1st Flr SF"]:
         if c in df.columns:
             df[c] = np.log1p(df[c])
 
-    return df[top_features].values, df["SalePrice"].values, top_features
+    feature_cols = [c for c in df.columns if c != "SalePrice"]
+    return df[feature_cols].values, df["SalePrice"].values, feature_cols
 
 
 def prepare_data():

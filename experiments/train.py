@@ -113,24 +113,26 @@ def train_nn(config, X_train, X_val, y_train, y_val, input_dim):
 def train_baselines(data):
     linears = {
         "OLS": LinearRegression(),
-        "Ridge": RidgeCV(cv=5),
-        "Lasso": LassoCV(cv=5, max_iter=10000),
-        "ElasticNet": ElasticNetCV(cv=5, l1_ratio=[0.1, 0.5, 0.7, 0.9, 1.0], max_iter=10000),
+        "Ridge": RidgeCV(cv=5, alphas=np.logspace(-2, 3, 100)),
+        "Lasso": LassoCV(cv=5, alphas=np.logspace(-4, 0, 50), max_iter=10000),
+        "ElasticNet": ElasticNetCV(cv=5, alphas=np.logspace(-4, 0, 50), l1_ratio=[0.1, 0.5, 0.7, 0.9, 1.0], max_iter=10000),
     }
 
     bl_results = {}
     for name, mdl in linears.items():
-        mdl.fit(data["Xtv_s"], data["y_tv"])
-        pred = mdl.predict(data["Xte_s"])
+        mdl.fit(data["Xtv_s"], data["y_tv_log"])
+        pred_log_scaled = mdl.predict(data["Xte_s"])
+        pred_log = data["sc_y_log"].inverse_transform(pred_log_scaled.reshape(-1, 1)).ravel()
+        pred = np.expm1(pred_log)
         m = metrics(data["y_test"], pred)
         m["y_pred"] = pred
         bl_results[name] = m
         alpha_str = ""
         if hasattr(mdl, "alpha_"):
-            alpha_str = f"  alpha={mdl.alpha_:.2f}"
+            alpha_str = f"  alpha={mdl.alpha_:.6f}" if mdl.alpha_ < 0.01 else f"  alpha={mdl.alpha_:.2f}"
         if hasattr(mdl, "l1_ratio_"):
             alpha_str += f" l1_ratio={mdl.l1_ratio_:.2f}"
-        print(f"  {name:12s}  RMSE=${m['RMSE']:>10,.0f}  MAE=${m['MAE']:>10,.0f}  R²={m['R2']:.4f}{alpha_str}")
+        print(f"  {name:12s}  RMSE=${m['RMSE']:>10,.0f}  MAE=${m['MAE']:>10,.0f}  NRMSE%={m['NRMSE%']:>6.2f}  MAPE%={m['MAPE%']:>6.2f}  R²={m['R2']:.4f}{alpha_str}")
 
     bl_df = pd.DataFrame({n: {k: v for k, v in r.items() if k != "y_pred"} for n, r in bl_results.items()}).T
     bl_df.to_csv(save("step1_baseline_metrics.csv"))
@@ -158,7 +160,8 @@ def train_neural_networks(data):
     for name, cfg in configs.items():
         print(f"\n  Training {name} ...")
         model, hist = train_nn(cfg, data["X_train"], data["X_val"], data["y_train"], data["y_val"], input_dim)
-        pred = to_dollar(nn_predict(model, data["X_test"]), data["sc_y"])
+        pred_log = to_dollar(nn_predict(model, data["X_test"]), data["sc_y"])
+        pred = np.expm1(pred_log)
         m = metrics(data["y_test"], pred)
 
         nn_models[name] = model
@@ -166,12 +169,13 @@ def train_neural_networks(data):
 
         print(f"    epochs={hist['total_epochs']} (best={hist['best_epoch']})  "
               f"time={hist['elapsed']:.1f}s  "
-              f"RMSE=${m['RMSE']:,.0f}  R²={m['R2']:.4f}")
+              f"RMSE=${m['RMSE']:,.0f}  NRMSE%={m['NRMSE%']:.2f}  R²={m['R2']:.4f}")
 
     rows = []
     for name, cfg in configs.items():
         h = nn_hists[name]
-        pred = to_dollar(nn_predict(nn_models[name], data["X_test"]), data["sc_y"])
+        pred_log = to_dollar(nn_predict(nn_models[name], data["X_test"]), data["sc_y"])
+        pred = np.expm1(pred_log)
         r = metrics(data["y_test"], pred)
         rows.append({
             "name": name,
@@ -184,6 +188,8 @@ def train_neural_networks(data):
             "train_time_s": round(h["elapsed"], 1),
             "test_RMSE": round(r["RMSE"], 2),
             "test_MAE": round(r["MAE"], 2),
+            "test_NRMSE%": round(r["NRMSE%"], 2),
+            "test_MAPE%": round(r["MAPE%"], 2),
             "test_R2": round(r["R2"], 4),
         })
     pd.DataFrame(rows).to_csv(save("step3_nn_experiments.csv"), index=False)

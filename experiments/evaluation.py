@@ -32,10 +32,21 @@ def to_dollar(y_scaled, scaler):
 
 
 def metrics(y_true, y_pred):
+    mse = mean_squared_error(y_true, y_pred)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(y_true, y_pred)
+    r2 = r2_score(y_true, y_pred)
+
+    y_mean = np.mean(y_true)
+    nrmse_pct = (rmse / y_mean) * 100
+    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+
     return {
-        "RMSE": np.sqrt(mean_squared_error(y_true, y_pred)),
-        "MAE": mean_absolute_error(y_true, y_pred),
-        "R2": r2_score(y_true, y_pred),
+        "RMSE": rmse,
+        "MAE": mae,
+        "NRMSE%": nrmse_pct,
+        "MAPE%": mape,
+        "R2": r2,
     }
 
 
@@ -121,8 +132,10 @@ def plot_importance(importances, names, filename):
 
 
 def permutation_importance(model, X, y_s, scaler_y, n_repeats=10):
-    y_true = to_dollar(y_s, scaler_y)
-    base_pred = to_dollar(nn_predict(model, X), scaler_y)
+    y_true_log = to_dollar(y_s, scaler_y)
+    y_true = np.expm1(y_true_log)
+    base_pred_log = to_dollar(nn_predict(model, X), scaler_y)
+    base_pred = np.expm1(base_pred_log)
     base_rmse = np.sqrt(mean_squared_error(y_true, base_pred))
 
     imp = np.zeros(X.shape[1])
@@ -131,7 +144,8 @@ def permutation_importance(model, X, y_s, scaler_y, n_repeats=10):
         for _ in range(n_repeats):
             Xp = X.copy()
             np.random.shuffle(Xp[:, col])
-            pp = to_dollar(nn_predict(model, Xp), scaler_y)
+            pp_log = to_dollar(nn_predict(model, Xp), scaler_y)
+            pp = np.expm1(pp_log)
             deltas.append(np.sqrt(mean_squared_error(y_true, pp)) - base_rmse)
         imp[col] = np.mean(deltas)
     return imp
@@ -168,16 +182,17 @@ def evaluate_all(data, nn_models, nn_hists, nn_configs, linears, bl_results):
 
     nn_results = {}
     for name, model in nn_models.items():
-        pred = to_dollar(nn_predict(model, X_test), sc_y)
+        pred_log = to_dollar(nn_predict(model, X_test), sc_y)
+        pred = np.expm1(pred_log)
         m = metrics(y_test, pred)
         m["y_pred"] = pred
         nn_results[name] = m
 
     all_rows = []
     for name, r in bl_results.items():
-        all_rows.append({"Model": name, "RMSE": r["RMSE"], "MAE": r["MAE"], "R2": r["R2"], "Type": "Linear"})
+        all_rows.append({"Model": name, "RMSE": r["RMSE"], "MAE": r["MAE"], "NRMSE%": r["NRMSE%"], "MAPE%": r["MAPE%"], "R2": r["R2"], "Type": "Linear"})
     for name, r in nn_results.items():
-        all_rows.append({"Model": name, "RMSE": r["RMSE"], "MAE": r["MAE"], "R2": r["R2"], "Type": "NN"})
+        all_rows.append({"Model": name, "RMSE": r["RMSE"], "MAE": r["MAE"], "NRMSE%": r["NRMSE%"], "MAPE%": r["MAPE%"], "R2": r["R2"], "Type": "NN"})
 
     comp_df = pd.DataFrame(all_rows).sort_values("R2", ascending=False).reset_index(drop=True)
     comp_df.to_csv(save("step5_comparison_table.csv"), index=False)
@@ -204,10 +219,10 @@ def evaluate_all(data, nn_models, nn_hists, nn_configs, linears, bl_results):
     print("=" * 70)
 
     best_model = nn_models[best_nn_name]
-    yte_s = sc_y.transform(y_test.reshape(-1, 1)).ravel()
+    y_test_log = data["y_test_log"]
 
     print("  Computing permutation importance ...")
-    imp = permutation_importance(best_model, X_test, yte_s, sc_y)
+    imp = permutation_importance(best_model, X_test, y_test_log, data["sc_y"])
     plot_importance(imp, feature_names, "step6_permutation_importance.png")
 
     imp_sorted = np.argsort(imp)[::-1]

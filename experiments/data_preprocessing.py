@@ -54,7 +54,7 @@ def load_and_preprocess():
         if c in df.columns:
             df[c] = np.log1p(df[c])
 
-    return df[top_features].values, df["SalePrice"].values, top_features
+    return df[top_features].values, np.log1p(df["SalePrice"]).values, top_features
 
 
 def prepare_data():
@@ -79,12 +79,18 @@ def prepare_data():
     Xtv_s = sc_X_full.transform(X_tv)
     Xte_s = sc_X_full.transform(X_test)
 
+    sc_y_log = StandardScaler().fit(y_train.reshape(-1, 1))
+    y_tv_log = sc_y_log.transform(y_tv.reshape(-1, 1)).ravel()
+    y_test_log = sc_y_log.transform(y_test.reshape(-1, 1)).ravel()
+    y_test_dollar = np.expm1(y_test)
+
     return {
         "feature_names": feature_names,
         "X_train": Xtr, "X_val": Xva, "X_test": Xte,
-        "y_train": ytr, "y_val": yva, "y_test": y_test,
+        "y_train": ytr, "y_val": yva, "y_test": y_test_dollar,
         "Xtv_s": Xtv_s, "Xte_s": Xte_s, "y_tv": y_tv,
-        "sc_y": sc_y,
+        "y_tv_log": y_tv_log, "y_test_log": y_test_log,
+        "sc_y": sc_y, "sc_y_log": sc_y_log,
         "n_samples": X.shape[0], "n_features": X.shape[1],
         "n_train": X_train.shape[0], "n_val": X_val.shape[0], "n_test": X_test.shape[0],
     }
